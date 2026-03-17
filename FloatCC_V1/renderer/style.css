@@ -50,6 +50,7 @@ html, body {
   -webkit-app-region: drag;
   app-region: drag;
   background: rgba(0, 0, 0, 0.85);
+  flex-shrink: 0;
 }
 
 /* 固定模式下，整个窗口和标题栏都不可拖动 */
@@ -138,6 +139,8 @@ html, body {
   justify-content: space-between;
   padding: 2px 12px;
   height: 24px;
+  position: relative;
+  z-index: 10;
 }
 
 .title {
@@ -267,6 +270,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 0;
   padding: 0 20px;
   overflow: hidden;
 }
@@ -284,8 +288,11 @@ html, body {
   font-weight: 500;
   line-height: 1.5;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
-  white-space: nowrap;
-  display: inline-block;
+  word-wrap: break-word;
+  word-break: break-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
   transition: opacity 0.15s ease;
 }
 
@@ -305,6 +312,9 @@ html, body {
   justify-content: space-between;
   padding: 2px 12px;
   height: 24px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
   background: rgba(0, 0, 0, 0.85);
 }
 
