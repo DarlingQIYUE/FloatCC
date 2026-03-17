@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';">
+  <title>FloatCC - 悬浮字幕</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- 拖拽区域 / 标题栏 -->
+    <div class="drag-region" id="drag-region">
+      <div class="title-bar">
+        <span class="title">FloatCC 悬浮字幕</span>
+        <div class="status-indicator" id="status">
+          <span class="status-dot"></span>
+          <span class="status-text">等待连接...</span>
+        </div>
+        <div class="window-controls">
+          <button class="control-btn opacity-btn" id="opacity-btn" title="调整透明度">◐</button>
+          <button class="control-btn pin-btn" id="pin-btn" title="置顶切换">📌</button>
+          <button class="control-btn minimize-btn" id="minimize-btn" title="最小化">−</button>
+          <button class="control-btn close-btn" id="close-btn" title="关闭">×</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 字幕显示区域 -->
+    <div class="subtitle-container" id="subtitle-container">
+      <div class="subtitle-content" id="subtitle-content">
+        <span class="subtitle-text" id="subtitle-text">等待字幕数据...</span>
+      </div>
+    </div>
+
+    <!-- 底部控制栏 -->
+    <div class="control-bar" id="control-bar">
+      <div class="subtitle-info" id="subtitle-info">
+        <span class="time-info" id="time-info">--:-- / --:--</span>
+        <span class="source-info" id="source-info">未连接</span>
+      </div>
+      <div class="opacity-control" id="opacity-control" style="display: none;">
+        <input type="range" id="opacity-slider" min="0.1" max="1" step="0.1" value="0.9">
+        <span id="opacity-value">90%</span>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

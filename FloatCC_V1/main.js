@@ -1,0 +1,236 @@
+const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage } = require('electron');
+const path = require('path');
+const WebSocket = require('ws');
+
+let mainWindow = null;
+let tray = null;
+let wss = null;
+let wsClients = [];
+
+// WebSocket服务器配置
+const WS_PORT = 8765;
+
+// 创建悬浮窗
+function createWindow() {
+  const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize;
+
+  mainWindow = new BrowserWindow({
+    width: 600,
+    height: 150,
+    x: screenWidth - 620,
+    y: screenHeight - 250,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    resizable: true,
+    skipTaskbar: false,
+    hasShadow: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    },
+    // 最小化到托盘而不是任务栏
+    show: false
+  });
+
+  mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+
+  // 窗口准备好后显示
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    console.log('[FloatCC] 悬浮窗已启动');
+  });
+
+  // 处理窗口关闭 - 最小化到托盘
+  mainWindow.on('close', (event) => {
+    if (!app.isQuitting) {
+      event.preventDefault();
+      mainWindow.hide();
+      return false;
+    }
+    return true;
+  });
+
+  // 启用拖拽
+  mainWindow.setIgnoreMouseEvents(false);
+
+  console.log('[FloatCC] 窗口创建完成');
+}
+
+// 创建系统托盘
+function createTray() {
+  // 创建一个简单的托盘图标
+  const iconPath = path.join(__dirname, 'assets', 'icon.png');
+  let trayIcon;
+
+  try {
+    trayIcon = nativeImage.createFromPath(iconPath);
+    if (trayIcon.isEmpty()) {
+      // 如果图标不存在，创建一个简单的图标
+      trayIcon = nativeImage.createEmpty();
+    }
+  } catch (e) {
+    trayIcon = nativeImage.createEmpty();
+  }
+
+  tray = new Tray(trayIcon);
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: '显示悬浮窗',
+      click: () => {
+        mainWindow.show();
+      }
+    },
+    {
+      label: '隐藏悬浮窗',
+      click: () => {
+        mainWindow.hide();
+      }
+    },
+    { type: 'separator' },
+    {
+      label: '透明度',
+      submenu: [
+        { label: '100%', click: () => mainWindow.webContents.send('set-opacity', 1) },
+        { label: '80%', click: () => mainWindow.webContents.send('set-opacity', 0.8) },
+        { label: '60%', click: () => mainWindow.webContents.send('set-opacity', 0.6) },
+        { label: '40%', click: () => mainWindow.webContents.send('set-opacity', 0.4) }
+      ]
+    },
+    { type: 'separator' },
+    {
+      label: '退出',
+      click: () => {
+        app.isQuitting = true;
+        app.quit();
+      }
+    }
+  ]);
+
+  tray.setToolTip('FloatCC - 悬浮字幕');
+  tray.setContextMenu(contextMenu);
+
+  tray.on('click', () => {
+    mainWindow.show();
+  });
+}
+
+// 启动WebSocket服务器
+function startWebSocketServer() {
+  wss = new WebSocket.Server({ port: WS_PORT });
+
+  wss.on('connection', (ws) => {
+    console.log('[FloatCC] 新客户端连接');
+    wsClients.push(ws);
+
+    // 发送欢迎消息
+    ws.send(JSON.stringify({ type: 'connected', message: 'FloatCC已连接' }));
+
+    ws.on('message', (message) => {
+      try {
+        const data = JSON.parse(message);
+        console.log('[FloatCC] 收到消息:', data.type);
+
+        // 转发给渲染进程
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('subtitle-update', data);
+        }
+
+        // 广播给所有客户端
+        wsClients.forEach(client => {
+          if (client !== ws && client.readyState === WebSocket.OPEN) {
+            client.send(message);
+          }
+        });
+      } catch (e) {
+        console.error('[FloatCC] 消息解析失败:', e);
+      }
+    });
+
+    ws.on('close', () => {
+      console.log('[FloatCC] 客户端断开连接');
+      wsClients = wsClients.filter(client => client !== ws);
+    });
+
+    ws.on('error', (error) => {
+      console.error('[FloatCC] WebSocket错误:', error);
+    });
+  });
+
+  console.log(`[FloatCC] WebSocket服务器已启动: ws://localhost:${WS_PORT}`);
+}
+
+// 处理IPC消息
+function setupIPC() {
+  // 最小化窗口
+  ipcMain.on('minimize-window', () => {
+    if (mainWindow) mainWindow.hide();
+  });
+
+  // 关闭窗口
+  ipcMain.on('close-window', () => {
+    app.isQuitting = true;
+    app.quit();
+  });
+
+  // 调整透明度
+  ipcMain.on('set-opacity', (event, opacity) => {
+    if (mainWindow) {
+      mainWindow.setOpacity(opacity);
+    }
+  });
+
+  // 开始拖拽
+  ipcMain.on('start-drag', () => {
+    // 无边框窗口使用系统拖拽
+  });
+
+  // 获取连接状态
+  ipcMain.handle('get-connection-status', () => {
+    return {
+      wsPort: WS_PORT,
+      connectedClients: wsClients.length
+    };
+  });
+}
+
+// 应用就绪
+app.whenReady().then(() => {
+  console.log('[FloatCC] 应用启动中...');
+  createWindow();
+  createTray();
+  startWebSocketServer();
+  setupIPC();
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
+});
+
+// 所有窗口关闭
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+// 应用退出前清理
+app.on('before-quit', () => {
+  app.isQuitting = true;
+  if (wss) {
+    wss.close();
+  }
+});
+
+// 全局异常处理
+process.on('uncaughtException', (error) => {
+  console.error('[FloatCC] 未捕获异常:', error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[FloatCC] 未处理的Promise拒绝:', reason);
+});
