@@ -22,6 +22,11 @@ html, body {
   overflow: hidden;
 }
 
+/* 固定模式下，整个窗口背景透明 */
+#app:not(.draggable) {
+  background: transparent !important;
+}
+
 /* 整个窗口可拖动（默认模式，不固定） */
 #app.draggable {
   -webkit-app-region: drag;
@@ -51,14 +56,88 @@ html, body {
 #app:not(.draggable) .drag-region {
   -webkit-app-region: no-drag;
   app-region: no-drag;
+  background: transparent !important;
+}
+
+/* 固定模式下，除了字幕和固定按钮，其他都完全透明且背景透明 */
+#app:not(.draggable) .title-bar {
+  opacity: 0;
+  background: transparent !important;
+  pointer-events: none;
+}
+
+#app:not(.draggable) .status-indicator {
+  opacity: 0;
+}
+
+#app:not(.draggable) .control-btn:not(.pin-btn) {
+  opacity: 0;
+  background: transparent !important;
+  pointer-events: none;
+}
+
+#app:not(.draggable) .color-picker {
+  opacity: 0;
+  background: transparent !important;
+  pointer-events: none;
+}
+
+#app:not(.draggable) .control-bar {
+  opacity: 0;
+  background: transparent !important;
+  pointer-events: none;
+}
+
+/* 固定模式下，固定按钮保持正常显示 */
+#app:not(.draggable) .pin-btn {
+  opacity: 1 !important;
+  background: transparent !important;
+  pointer-events: auto !important;
+}
+
+#app:not(.draggable) .pin-btn.active {
+  color: #4caf50;
+}
+
+/* 固定模式下，鼠标悬停时显示按钮，其他元素透明 */
+#app:not(.draggable):hover .title-bar {
+  opacity: 1;
+  background: transparent !important;
+}
+
+#app:not(.draggable):hover .title {
+  opacity: 0;
+}
+
+#app:not(.draggable):hover .status-indicator {
+  opacity: 0;
+}
+
+#app:not(.draggable):hover .control-btn:not(.pin-btn) {
+  opacity: 1;
+  background: #3a3a3a !important;
+}
+
+#app:not(.draggable):hover .color-picker {
+  opacity: 1;
+  background: #3a3a3a !important;
+}
+
+#app:not(.draggable):hover .control-bar {
+  opacity: 1;
+  background: transparent !important;
+}
+
+#app:not(.draggable):hover .subtitle-info {
+  opacity: 0;
 }
 
 .title-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 12px;
-  height: 28px;
+  padding: 2px 12px;
+  height: 24px;
 }
 
 .title {
@@ -104,13 +183,13 @@ html, body {
 }
 
 .control-btn {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border: none;
   border-radius: 4px;
   background: #3a3a3a;
   color: #aaa;
-  font-size: 14px;
+  font-size: 12px;
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
@@ -140,8 +219,8 @@ html, body {
 }
 
 .color-picker {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border: none;
   border-radius: 4px;
   background: #3a3a3a;
@@ -218,7 +297,8 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 12px;
+  padding: 2px 12px;
+  height: 24px;
   background: rgba(0, 0, 0, 0.85);
 }
 
