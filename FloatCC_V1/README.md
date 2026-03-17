@@ -71,82 +71,9 @@ FloatCC_V1/
 
 ## 技术原理
 
-### 整体架构
-
-```
-┌─────────────────┐         WebSocket          ┌─────────────────┐
-│   Chrome浏览器   │ ←─────────────────────────→│   FloatCC应用    │
-│  (油猴脚本)      │    ws://localhost:8765     │  (Electron)     │
-└─────────────────┘                             └─────────────────┘
-        │                                                │
-        │ 1. 获取B站字幕API                              │
-        │ 2. 根据播放时间匹配字幕                        │
-        │ 3. 通过WebSocket推送                          │
-        │                                                │
-        ▼                                                ▼
-┌─────────────────┐                             ┌─────────────────┐
-│ B站API服务器     │                             │  悬浮字幕窗口    │
-│ api.bilibili.com│                             │  (透明置顶)     │
-└─────────────────┘                             └─────────────────┘
-```
-
-### 1. 视频信息获取
-
-油猴脚本通过多种途径获取视频信息 (cid, aid, bvid)：
-
-```javascript
-// 优先级顺序：
-1. window.__INITIAL_STATE__.cidMap[bvid]  // React状态中的cidMap
-2. window.__INITIAL_STATE__.videoData      // 视频数据
-3. window.playerRaw.getManifest()           // 播放器实例
-4. window.player                           // 备用播放器
-5. URL参数 (?cid=xxx&aid=xxx)
-```
-
-### 2. 字幕API调用
-
-获取到cid和aid后，调用B站API获取字幕列表：
-
-```javascript
-// 主API (需要cid)
-GET https://api.bilibili.com/x/player/wbi/v2?cid={cid}&aid={aid}
-
-// 备用API (只有bvid时)
-GET https://api.bilibili.com/x/player/v2?bvid={bvid}
-
-// 再次备用 (APP弹幕)
-GET https://api.bilibili.com/x/v2/dm/view?aid={aid}&oid={cid}
-```
-
-API返回字幕列表，包含每个字幕的语言和下载URL。
-
-### 3. 字幕匹配
-
-获取字幕内容后，根据当前播放时间匹配显示的字幕：
-
-```javascript
-function getSubtitleByTime(currentTime, subtitleData) {
-  for (const item of subtitleData.body) {
-    if (currentTime >= item.from && currentTime <= item.to) {
-      return item.content;  // 返回当前时间对应的字幕
-    }
-  }
-  return null;
-}
-```
-
-### 4. 后台运行
-
-页面隐藏后，浏览器会暂停页面JavaScript执行。为了继续获取字幕：
-
-- **Web Worker**: 在独立线程中运行定时器，不受页面可见性影响
-- **定时轮询**: 每300ms检查一次播放时间和字幕
-
-### 5. Electron悬浮窗
-
-- **无边框窗口**: `frame: false, transparent: true`
-- **始终置顶**: `alwaysOnTop: true`
-- **系统托盘**: 最小化时隐藏到托盘
+1. **Electron主进程**: 创建无边框透明窗口，运行WebSocket服务器
+2. **WebSocket通信**: 油猴脚本通过WebSocket推送实时字幕
+3. **渲染进程**: 接收字幕数据并显示在悬浮窗中
 
 ### 通信协议
 
