@@ -21,6 +21,7 @@ const opacityBtn = document.getElementById('opacity-btn');
 const pinBtn = document.getElementById('pin-btn');
 const minimizeBtn = document.getElementById('minimize-btn');
 const closeBtn = document.getElementById('close-btn');
+const colorPicker = document.getElementById('color-picker');
 
 // 更新字幕显示
 function updateSubtitle(data) {
@@ -96,6 +97,7 @@ function togglePin() {
     opacityBtn.disabled = true;
     minimizeBtn.disabled = true;
     closeBtn.disabled = true;
+    colorPicker.disabled = true;
   } else {
     // 不固定：允许拖动整个窗口，启用所有按钮
     app.classList.add('draggable');
@@ -103,6 +105,7 @@ function togglePin() {
     opacityBtn.disabled = false;
     minimizeBtn.disabled = false;
     closeBtn.disabled = false;
+    colorPicker.disabled = false;
   }
 
   if (window.electronAPI) {
@@ -176,6 +179,11 @@ closeBtn.addEventListener('click', () => {
 // 透明度滑块事件
 opacitySlider.addEventListener('input', (e) => {
   adjustOpacity(parseFloat(e.target.value));
+});
+
+// 颜色选择器事件
+colorPicker.addEventListener('input', (e) => {
+  subtitleText.style.color = e.target.value;
 });
 
 // 初始化状态
