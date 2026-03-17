@@ -144,6 +144,9 @@ html, body {
   color: #888;
   font-size: 12px;
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 状态指示器 */
@@ -172,6 +175,9 @@ html, body {
 .status-text {
   color: #666;
   font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 窗口控制按钮 */
@@ -278,7 +284,7 @@ html, body {
   font-weight: 500;
   line-height: 1.5;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
-  word-wrap: break-word;
+  white-space: nowrap;
   display: inline-block;
   transition: opacity 0.15s ease;
 }
@@ -312,11 +318,17 @@ html, body {
   color: #888;
   font-size: 12px;
   font-family: monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .source-info {
   color: #666;
   font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .source-info.connected {
