@@ -1,3 +1,13 @@
+// 解决Windows控制台中文乱码
+process.env.CHROME_DEVEL_SANDBOX = '0';
+if (process.platform === 'win32') {
+  process.env.ELECTRON_NO_ASAR = '1';
+  // 设置控制台编码为UTF-8
+  try {
+    require('child_process').execSync('chcp 65001', { stdio: 'ignore' });
+  } catch (e) {}
+}
+
 const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const WebSocket = require('ws');

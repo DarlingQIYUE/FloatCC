@@ -4,8 +4,8 @@
   "description": "B站悬浮字幕 - 当切换到其他页面时在屏幕最上层显示字幕",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
-    "dev": "electron . --enable-logging",
+    "start": "chcp 65001 >nul && electron .",
+    "dev": "chcp 65001 >nul && electron . --enable-logging",
     "build": "electron-builder --win --x64",
     "pack": "electron-builder --dir"
   },
