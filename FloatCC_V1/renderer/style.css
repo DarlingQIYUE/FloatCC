@@ -22,11 +22,35 @@ html, body {
   overflow: hidden;
 }
 
-/* 拖拽区域 */
+/* 整个窗口可拖动（默认模式，不固定） */
+#app.draggable {
+  -webkit-app-region: drag;
+}
+
+/* 固定模式下，按钮区域不可拖动但可点击 */
+#app.draggable .window-controls {
+  -webkit-app-region: no-drag;
+}
+
+#app.draggable .subtitle-container {
+  -webkit-app-region: no-drag;
+}
+
+#app.draggable .control-bar {
+  -webkit-app-region: no-drag;
+}
+
+/* 拖拽区域 - 默认可拖动 */
 .drag-region {
   -webkit-app-region: drag;
   app-region: drag;
   background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
+}
+
+/* 固定模式下，整个窗口和标题栏都不可拖动 */
+#app:not(.draggable) .drag-region {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 .title-bar {
@@ -97,6 +121,17 @@ html, body {
 .control-btn:hover {
   background: #4a4a4a;
   color: #fff;
+}
+
+.control-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.control-btn:disabled:hover {
+  background: #3a3a3a;
+  color: #aaa;
 }
 
 .close-btn:hover {

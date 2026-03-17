@@ -2,7 +2,7 @@
 console.log('[FloatCC] 渲染进程启动');
 
 let currentSubtitle = '';
-let isPinned = true;
+let isPinned = false;  // 默认不固定，窗口可拖动
 let currentOpacity = 0.9;
 
 // DOM元素
@@ -87,8 +87,27 @@ function togglePin() {
   isPinned = !isPinned;
   pinBtn.classList.toggle('active', isPinned);
 
+  const app = document.getElementById('app');
+
+  if (isPinned) {
+    // 固定：禁止拖动整个窗口，禁用其他按钮
+    app.classList.remove('draggable');
+    // 禁用其他按钮
+    opacityBtn.disabled = true;
+    minimizeBtn.disabled = true;
+    closeBtn.disabled = true;
+  } else {
+    // 不固定：允许拖动整个窗口，启用所有按钮
+    app.classList.add('draggable');
+    // 启用所有按钮
+    opacityBtn.disabled = false;
+    minimizeBtn.disabled = false;
+    closeBtn.disabled = false;
+  }
+
   if (window.electronAPI) {
-    window.electronAPI.setOpacity(isPinned ? currentOpacity : 0.3);
+    // 透明度保持一致
+    window.electronAPI.setOpacity(currentOpacity);
   }
 }
 
@@ -161,6 +180,7 @@ opacitySlider.addEventListener('input', (e) => {
 
 // 初始化状态
 updateConnectionStatus(false);
-pinBtn.classList.add('active');
+// 默认不固定：整个窗口可拖动，所有按钮可用
+document.getElementById('app').classList.add('draggable');
 
 console.log('[FloatCC] 渲染进程初始化完成');

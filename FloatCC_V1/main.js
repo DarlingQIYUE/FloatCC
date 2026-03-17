@@ -192,6 +192,15 @@ function setupIPC() {
     }
   });
 
+  // 设置是否可拖拽
+  ipcMain.on('set-draggable', (event, draggable) => {
+    if (mainWindow) {
+      // 使用CSS控制拖拽，app-region: drag/nodrag由渲染进程自己处理
+      // 这里只发送消息给渲染进程
+      console.log('[FloatCC] 拖拽状态:', draggable ? '启用' : '禁用');
+    }
+  });
+
   // 开始拖拽
   ipcMain.on('start-drag', () => {
     // 无边框窗口使用系统拖拽
