@@ -8,12 +8,11 @@ if (process.platform === 'win32') {
   } catch (e) {}
 }
 
-const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, Menu, nativeImage } = require('electron');
 const path = require('path');
 const WebSocket = require('ws');
 
 let mainWindow = null;
-let tray = null;
 let wss = null;
 let wsClients = [];
 
@@ -52,79 +51,11 @@ function createWindow() {
     console.log('[FloatCC] 悬浮窗已启动');
   });
 
-  // 处理窗口关闭 - 最小化到托盘
-  mainWindow.on('close', (event) => {
-    if (!app.isQuitting) {
-      event.preventDefault();
-      mainWindow.hide();
-      return false;
-    }
-    return true;
-  });
-
+  // 设置任务栏右键菜单
   // 启用拖拽
   mainWindow.setIgnoreMouseEvents(false);
 
   console.log('[FloatCC] 窗口创建完成');
-}
-
-// 创建系统托盘
-function createTray() {
-  // 创建一个简单的托盘图标
-  const iconPath = path.join(__dirname, 'assets', 'icon.png');
-  let trayIcon;
-
-  try {
-    trayIcon = nativeImage.createFromPath(iconPath);
-    if (trayIcon.isEmpty()) {
-      // 如果图标不存在，创建一个简单的图标
-      trayIcon = nativeImage.createEmpty();
-    }
-  } catch (e) {
-    trayIcon = nativeImage.createEmpty();
-  }
-
-  tray = new Tray(trayIcon);
-
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: '显示悬浮窗',
-      click: () => {
-        mainWindow.show();
-      }
-    },
-    {
-      label: '隐藏悬浮窗',
-      click: () => {
-        mainWindow.hide();
-      }
-    },
-    { type: 'separator' },
-    {
-      label: '透明度',
-      submenu: [
-        { label: '100%', click: () => mainWindow.webContents.send('set-opacity', 1) },
-        { label: '80%', click: () => mainWindow.webContents.send('set-opacity', 0.8) },
-        { label: '60%', click: () => mainWindow.webContents.send('set-opacity', 0.6) },
-        { label: '40%', click: () => mainWindow.webContents.send('set-opacity', 0.4) }
-      ]
-    },
-    { type: 'separator' },
-    {
-      label: '退出',
-      click: () => {
-        app.isQuitting = true;
-        app.quit();
-      }
-    }
-  ]);
-
-  tray.setToolTip('FloatCC - 悬浮字幕');
-  tray.setContextMenu(contextMenu);
-
-  tray.on('click', () => {
-    mainWindow.show();
-  });
 }
 
 // 启动WebSocket服务器
@@ -219,7 +150,6 @@ function setupIPC() {
 app.whenReady().then(() => {
   console.log('[FloatCC] 应用启动中...');
   createWindow();
-  createTray();
   startWebSocketServer();
   setupIPC();
 
