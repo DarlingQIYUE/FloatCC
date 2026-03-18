@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "FloatCC 字幕推送",
+  "version": "1.0",
+  "description": "将B站视频字幕实时推送到FloatCC悬浮字幕应用",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://api.bilibili.com/*",
+    "https://aisubtitle.hdslb.com/*",
+    "https://www.bilibili.com/*",
+    "http://localhost:8765/*"
+  ],
+  "action": {
+    "default_title": "FloatCC 字幕推送"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.bilibili.com/video/*",
+        "https://www.bilibili.com/bangumi/play/*",
+        "https://www.bilibili.com/cheese/play/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ]
+}

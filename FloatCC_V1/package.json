@@ -41,7 +41,12 @@
       "main.js",
       "preload.js",
       "renderer/**/*",
-      "assets/**/*"
+      "assets/**/*",
+      "node_modules/ws/**/*"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/ws/**/*"
     ]
   }
 }

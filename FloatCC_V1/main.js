@@ -60,7 +60,15 @@ function createWindow() {
 
 // 启动WebSocket服务器
 function startWebSocketServer() {
-  wss = new WebSocket.Server({ port: WS_PORT });
+  wss = new WebSocket.Server({ port: WS_PORT, host: '0.0.0.0' });
+
+  wss.on('error', (error) => {
+    console.error('[FloatCC] WebSocket服务器错误:', error.message);
+  });
+
+  wss.on('listening', () => {
+    console.log(`[FloatCC] WebSocket服务器已启动: ws://0.0.0.0:${WS_PORT}`);
+  });
 
   wss.on('connection', (ws) => {
     console.log('[FloatCC] 新客户端连接');
@@ -99,8 +107,6 @@ function startWebSocketServer() {
       console.error('[FloatCC] WebSocket错误:', error);
     });
   });
-
-  console.log(`[FloatCC] WebSocket服务器已启动: ws://localhost:${WS_PORT}`);
 }
 
 // 处理IPC消息
