@@ -113,7 +113,7 @@ function startWebSocketServer() {
 function setupIPC() {
   // 最小化窗口
   ipcMain.on('minimize-window', () => {
-    if (mainWindow) mainWindow.hide();
+    if (mainWindow) mainWindow.minimize();
   });
 
   // 关闭窗口
