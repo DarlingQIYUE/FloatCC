@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   closeWindow: () => ipcRenderer.send('close-window'),
   setOpacity: (opacity) => ipcRenderer.send('set-opacity', opacity),
   setDraggable: (draggable) => ipcRenderer.send('set-draggable', draggable),
+  setResizable: (resizable) => ipcRenderer.send('set-resizable', resizable),
 
   // 监听字幕更新
   onSubtitleUpdate: (callback) => {

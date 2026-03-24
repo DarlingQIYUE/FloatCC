@@ -138,6 +138,14 @@ function setupIPC() {
     }
   });
 
+  // 设置是否可调整窗口大小
+  ipcMain.on('set-resizable', (event, resizable) => {
+    if (mainWindow) {
+      mainWindow.setResizable(resizable);
+      console.log('[FloatCC] 窗口调整大小:', resizable ? '允许' : '禁止');
+    }
+  });
+
   // 开始拖拽
   ipcMain.on('start-drag', () => {
     // 无边框窗口使用系统拖拽

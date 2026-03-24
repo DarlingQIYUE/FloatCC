@@ -91,21 +91,29 @@ function togglePin() {
   const app = document.getElementById('app');
 
   if (isPinned) {
-    // 固定：禁止拖动整个窗口，禁用其他按钮
+    // 固定：禁止拖动整个窗口，禁用其他按钮，禁止调整窗口大小
     app.classList.remove('draggable');
     // 禁用其他按钮
     opacityBtn.disabled = true;
     minimizeBtn.disabled = true;
     closeBtn.disabled = true;
     colorPicker.disabled = true;
+    // 禁止调整窗口大小
+    if (window.electronAPI) {
+      window.electronAPI.setResizable(false);
+    }
   } else {
-    // 不固定：允许拖动整个窗口，启用所有按钮
+    // 不固定：允许拖动整个窗口，启用所有按钮，允许调整窗口大小
     app.classList.add('draggable');
     // 启用所有按钮
     opacityBtn.disabled = false;
     minimizeBtn.disabled = false;
     closeBtn.disabled = false;
     colorPicker.disabled = false;
+    // 允许调整窗口大小
+    if (window.electronAPI) {
+      window.electronAPI.setResizable(true);
+    }
   }
 
   if (window.electronAPI) {
