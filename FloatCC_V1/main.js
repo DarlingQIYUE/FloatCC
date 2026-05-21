@@ -106,6 +106,9 @@ function startWebSocketServer() {
     // 发送欢迎消息
     ws.send(JSON.stringify({ type: 'connected', message: 'FloatCC已连接' }));
 
+    // 主动通知渲染进程连接已建立（连接状态由服务器权威报告，不依赖客户端推送）
+    notifyConnectionStatus();
+
     ws.on('message', (message) => {
       try {
         const data = JSON.parse(message);
@@ -123,11 +126,20 @@ function startWebSocketServer() {
     ws.on('close', () => {
       console.log('[FloatCC] 客户端断开连接');
       wsClients = wsClients.filter(client => client !== ws);
+      notifyConnectionStatus();
     });
 
     ws.on('error', (error) => {
       console.error('[FloatCC] WebSocket错误:', error);
     });
+  });
+}
+
+// 通知渲染进程当前连接状态
+function notifyConnectionStatus() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send('subtitle-update', {
+    type: wsClients.length > 0 ? 'connected' : 'disconnect'
   });
 }
 

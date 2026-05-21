@@ -164,9 +164,12 @@ if (window.electronAPI) {
     adjustOpacity(opacity);
   });
 
-  // 初始获取连接状态
+  // 初始获取连接状态（防止渲染进程晚于客户端连接导致首次通知丢失）
   window.electronAPI.getConnectionStatus().then(status => {
     console.log('[FloatCC] 连接状态:', status);
+    if (status && status.connectedClients > 0) {
+      updateConnectionStatus(true);
+    }
   });
 }
 
