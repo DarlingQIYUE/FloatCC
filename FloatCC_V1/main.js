@@ -18,6 +18,17 @@ let wsClients = [];
 
 // WebSocket服务器配置
 const WS_PORT = 8765;
+const WS_HOST = '127.0.0.1';
+const ALLOWED_WS_ORIGINS = new Set([
+  'https://www.bilibili.com',
+  'https://bilibili.com'
+]);
+function isAllowedOrigin(origin) {
+  if (!origin) return false;
+  if (ALLOWED_WS_ORIGINS.has(origin)) return true;
+  if (origin.startsWith('chrome-extension://')) return true;
+  return false;
+}
 
 // 创建悬浮窗
 function createWindow() {
@@ -37,13 +48,20 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false
     },
     // 最小化到托盘而不是任务栏
     show: false
   });
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+
+  // 拒绝任何窗口内导航与新窗口打开请求，防止恶意字幕中的链接被点开
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  mainWindow.webContents.on('will-navigate', (e) => e.preventDefault());
 
   // 窗口准备好后显示
   mainWindow.once('ready-to-show', () => {
@@ -60,14 +78,25 @@ function createWindow() {
 
 // 启动WebSocket服务器
 function startWebSocketServer() {
-  wss = new WebSocket.Server({ port: WS_PORT, host: '0.0.0.0' });
+  wss = new WebSocket.Server({
+    port: WS_PORT,
+    host: WS_HOST,
+    verifyClient: (info, cb) => {
+      const origin = info.req.headers.origin;
+      if (!isAllowedOrigin(origin)) {
+        console.warn('[FloatCC] 拒绝未授权 Origin:', origin);
+        return cb(false, 403, 'Forbidden origin');
+      }
+      cb(true);
+    }
+  });
 
   wss.on('error', (error) => {
     console.error('[FloatCC] WebSocket服务器错误:', error.message);
   });
 
   wss.on('listening', () => {
-    console.log(`[FloatCC] WebSocket服务器已启动: ws://0.0.0.0:${WS_PORT}`);
+    console.log(`[FloatCC] WebSocket服务器已启动: ws://${WS_HOST}:${WS_PORT}`);
   });
 
   wss.on('connection', (ws) => {
@@ -86,13 +115,6 @@ function startWebSocketServer() {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('subtitle-update', data);
         }
-
-        // 广播给所有客户端
-        wsClients.forEach(client => {
-          if (client !== ws && client.readyState === WebSocket.OPEN) {
-            client.send(message);
-          }
-        });
       } catch (e) {
         console.error('[FloatCC] 消息解析失败:', e);
       }
@@ -124,9 +146,10 @@ function setupIPC() {
 
   // 调整透明度
   ipcMain.on('set-opacity', (event, opacity) => {
-    if (mainWindow) {
-      mainWindow.setOpacity(opacity);
-    }
+    if (!mainWindow) return;
+    const v = Number(opacity);
+    if (!Number.isFinite(v)) return;
+    mainWindow.setOpacity(Math.min(1, Math.max(0.1, v)));
   });
 
   // 设置是否可拖拽
