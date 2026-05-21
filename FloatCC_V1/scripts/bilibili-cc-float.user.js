@@ -69,6 +69,7 @@
         isConnected = true;
         if (reconnectTimer) clearTimeout(reconnectTimer);
         send({ type: 'connected', message: 'B站已连接' });
+        sendHello();
         startListener();
       };
       ws.onmessage = (event) => {
@@ -89,6 +90,16 @@
 
   function send(data) {
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
+  }
+
+  // 上报当前视频元数据
+  function sendHello() {
+    const info = getVideoInfo();
+    send({
+      type: 'hello',
+      source: getVideoTitle(),
+      bvid: info.bvid || null
+    });
   }
 
   // 核心：获取视频信息 - 参考downloadCC.js的实现
@@ -373,6 +384,7 @@
       log('检测到视频切换: ' + currentBvid + ' -> ' + pageBvid);
       cachedInfo = null; // 清除缓存
       subtitleData = null; // 清除字幕数据
+      sendHello(); // 通知主进程更新源标题
     }
   }
 

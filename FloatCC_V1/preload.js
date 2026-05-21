@@ -20,7 +20,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // 获取连接状态
-  getConnectionStatus: () => ipcRenderer.invoke('get-connection-status')
+  getConnectionStatus: () => ipcRenderer.invoke('get-connection-status'),
+
+  // 字幕源列表
+  getClients: () => ipcRenderer.invoke('get-clients'),
+  selectClient: (id) => ipcRenderer.send('select-client', id),
+  onClientsUpdate: (callback) => {
+    ipcRenderer.on('clients-update', (event, list) => callback(list));
+  }
 });
 
 console.log('[FloatCC] Preload脚本已加载');

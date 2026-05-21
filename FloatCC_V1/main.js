@@ -14,7 +14,10 @@ const WebSocket = require('ws');
 
 let mainWindow = null;
 let wss = null;
-let wsClients = [];
+// 客户端注册：id -> { id, ws, source, bvid, currentTime, duration, connectedAt }
+let clients = new Map();
+let clientIdSeq = 0;
+let currentClientId = null;
 
 // WebSocket服务器配置
 const WS_PORT = 8765;
@@ -100,22 +103,52 @@ function startWebSocketServer() {
   });
 
   wss.on('connection', (ws) => {
-    console.log('[FloatCC] 新客户端连接');
-    wsClients.push(ws);
+    const id = ++clientIdSeq;
+    const client = {
+      id, ws,
+      source: null, bvid: null,
+      currentTime: 0, duration: 0,
+      connectedAt: Date.now()
+    };
+    clients.set(id, client);
+    console.log('[FloatCC] 新客户端连接 id=' + id);
 
     // 发送欢迎消息
     ws.send(JSON.stringify({ type: 'connected', message: 'FloatCC已连接' }));
 
-    // 主动通知渲染进程连接已建立（连接状态由服务器权威报告，不依赖客户端推送）
+    // 第一个客户端自动成为当前源
+    if (currentClientId === null) {
+      currentClientId = id;
+    }
+
     notifyConnectionStatus();
+    broadcastClients();
 
     ws.on('message', (message) => {
       try {
         const data = JSON.parse(message);
-        console.log('[FloatCC] 收到消息:', data.type);
+        const c = clients.get(id);
+        if (!c) return;
 
-        // 转发给渲染进程
-        if (mainWindow && !mainWindow.isDestroyed()) {
+        // 提取元数据
+        let metaChanged = false;
+        if (data.source && data.source !== c.source) {
+          c.source = data.source;
+          metaChanged = true;
+        }
+        if (data.bvid && data.bvid !== c.bvid) {
+          c.bvid = data.bvid;
+          metaChanged = true;
+        }
+        if (typeof data.currentTime === 'number') c.currentTime = data.currentTime;
+        if (typeof data.duration === 'number') c.duration = data.duration;
+        if (metaChanged) broadcastClients();
+
+        // hello 仅用于上报视频元数据，不转发给渲染进程
+        if (data.type === 'hello') return;
+
+        // 仅转发当前选中客户端的消息
+        if (id === currentClientId && mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('subtitle-update', data);
         }
       } catch (e) {
@@ -124,9 +157,14 @@ function startWebSocketServer() {
     });
 
     ws.on('close', () => {
-      console.log('[FloatCC] 客户端断开连接');
-      wsClients = wsClients.filter(client => client !== ws);
+      console.log('[FloatCC] 客户端断开 id=' + id);
+      clients.delete(id);
+      // 如果断开的是当前选中，自动切到下一个最早连上的
+      if (id === currentClientId) {
+        pickNextClient();
+      }
       notifyConnectionStatus();
+      broadcastClients();
     });
 
     ws.on('error', (error) => {
@@ -135,11 +173,53 @@ function startWebSocketServer() {
   });
 }
 
+// 当前客户端列表（供渲染进程展示）
+function getClientList() {
+  return Array.from(clients.values())
+    .sort((a, b) => a.id - b.id)
+    .map(c => ({
+      id: c.id,
+      source: c.source || '未知视频',
+      bvid: c.bvid || null,
+      isActive: c.id === currentClientId
+    }));
+}
+
+function broadcastClients() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send('clients-update', getClientList());
+}
+
+function selectClient(id) {
+  if (id !== null && !clients.has(id)) return false;
+  if (currentClientId === id) return true;
+  currentClientId = id;
+  broadcastClients();
+  // 切源时通知渲染进程清空旧字幕
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('subtitle-update', { type: 'source-changed' });
+  }
+  return true;
+}
+
+// 从在线客户端里挑一个接任，按 id 升序（最早连上的优先）
+function pickNextClient() {
+  if (clients.size === 0) {
+    currentClientId = null;
+    return;
+  }
+  const next = Array.from(clients.values()).sort((a, b) => a.id - b.id)[0];
+  currentClientId = next.id;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('subtitle-update', { type: 'source-changed' });
+  }
+}
+
 // 通知渲染进程当前连接状态
 function notifyConnectionStatus() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.webContents.send('subtitle-update', {
-    type: wsClients.length > 0 ? 'connected' : 'disconnect'
+    type: clients.size > 0 ? 'connected' : 'disconnect'
   });
 }
 
@@ -190,8 +270,16 @@ function setupIPC() {
   ipcMain.handle('get-connection-status', () => {
     return {
       wsPort: WS_PORT,
-      connectedClients: wsClients.length
+      connectedClients: clients.size
     };
+  });
+
+  // 获取客户端列表
+  ipcMain.handle('get-clients', () => getClientList());
+
+  // 切换当前字幕源
+  ipcMain.on('select-client', (event, id) => {
+    selectClient(typeof id === 'number' ? id : null);
   });
 }
 

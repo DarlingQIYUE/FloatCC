@@ -21,7 +21,15 @@ const opacityBtn = document.getElementById('opacity-btn');
 const pinBtn = document.getElementById('pin-btn');
 const minimizeBtn = document.getElementById('minimize-btn');
 const closeBtn = document.getElementById('close-btn');
-const colorPicker = document.getElementById('color-picker');
+const fontBtn = document.getElementById('font-btn');
+const fontPanel = document.getElementById('font-panel');
+const fontColor = document.getElementById('font-color');
+const fontSize = document.getElementById('font-size');
+const fontSizeValue = document.getElementById('font-size-value');
+const sourceBtn = document.getElementById('source-btn');
+const sourcePanel = document.getElementById('source-panel');
+
+let clientsList = [];
 
 // 更新字幕显示
 function updateSubtitle(data) {
@@ -97,7 +105,11 @@ function togglePin() {
     opacityBtn.disabled = true;
     minimizeBtn.disabled = true;
     closeBtn.disabled = true;
-    colorPicker.disabled = true;
+    fontBtn.disabled = true;
+    sourceBtn.disabled = true;
+    // 固定时收起所有面板
+    sourcePanel.style.display = 'none';
+    fontPanel.style.display = 'none';
     // 禁止调整窗口大小
     if (window.electronAPI) {
       window.electronAPI.setResizable(false);
@@ -109,7 +121,8 @@ function togglePin() {
     opacityBtn.disabled = false;
     minimizeBtn.disabled = false;
     closeBtn.disabled = false;
-    colorPicker.disabled = false;
+    fontBtn.disabled = false;
+    sourceBtn.disabled = false;
     // 允许调整窗口大小
     if (window.electronAPI) {
       window.electronAPI.setResizable(true);
@@ -126,6 +139,46 @@ function togglePin() {
 function toggleOpacityControl() {
   const isVisible = opacityControl.style.display === 'flex';
   opacityControl.style.display = isVisible ? 'none' : 'flex';
+}
+
+// 渲染字幕源面板
+function renderSourcePanel() {
+  sourcePanel.innerHTML = '';
+  if (!clientsList || clientsList.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'source-item empty';
+    empty.textContent = '没有正在播放的视频';
+    sourcePanel.appendChild(empty);
+    return;
+  }
+  clientsList.forEach(c => {
+    const item = document.createElement('div');
+    item.className = 'source-item' + (c.isActive ? ' active' : '');
+    item.textContent = c.source;
+    item.title = c.source;
+    item.addEventListener('click', () => {
+      if (window.electronAPI) window.electronAPI.selectClient(c.id);
+      sourcePanel.style.display = 'none';
+    });
+    sourcePanel.appendChild(item);
+  });
+}
+
+// 切换字幕源面板
+function toggleSourcePanel() {
+  const isVisible = sourcePanel.style.display === 'block';
+  if (isVisible) {
+    sourcePanel.style.display = 'none';
+  } else {
+    renderSourcePanel();
+    sourcePanel.style.display = 'block';
+  }
+}
+
+// 切换文字设置面板
+function toggleFontPanel() {
+  const isVisible = fontPanel.style.display === 'flex';
+  fontPanel.style.display = isVisible ? 'none' : 'flex';
 }
 
 // 调整透明度
@@ -156,7 +209,21 @@ if (window.electronAPI) {
       }
     } else if (data.type === 'close' || data.type === 'disconnect') {
       updateConnectionStatus(false);
+    } else if (data.type === 'source-changed') {
+      // 切换字幕源时清空字幕等下一帧推送
+      currentSubtitle = '';
+      subtitleText.textContent = '等待字幕数据...';
+      subtitleText.classList.add('empty');
+      timeInfo.textContent = '--:-- / --:--';
+      sourceInfo.textContent = '未连接';
+      sourceInfo.classList.remove('connected');
     }
+  });
+
+  // 监听客户端列表变化
+  window.electronAPI.onClientsUpdate((list) => {
+    clientsList = list || [];
+    if (sourcePanel.style.display === 'block') renderSourcePanel();
   });
 
   // 监听透明度设置
@@ -171,11 +238,38 @@ if (window.electronAPI) {
       updateConnectionStatus(true);
     }
   });
+
+  // 初始拉一次客户端列表
+  window.electronAPI.getClients().then(list => {
+    clientsList = list || [];
+  });
 }
 
 // 按钮事件绑定
 opacityBtn.addEventListener('click', toggleOpacityControl);
 pinBtn.addEventListener('click', togglePin);
+sourceBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleSourcePanel();
+});
+fontBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleFontPanel();
+});
+
+// 点击面板外部时收起
+document.addEventListener('click', (e) => {
+  if (sourcePanel.style.display === 'block'
+      && !sourcePanel.contains(e.target)
+      && e.target !== sourceBtn) {
+    sourcePanel.style.display = 'none';
+  }
+  if (fontPanel.style.display === 'flex'
+      && !fontPanel.contains(e.target)
+      && e.target !== fontBtn) {
+    fontPanel.style.display = 'none';
+  }
+});
 minimizeBtn.addEventListener('click', () => {
   if (window.electronAPI) {
     window.electronAPI.minimizeWindow();
@@ -192,9 +286,14 @@ opacitySlider.addEventListener('input', (e) => {
   adjustOpacity(parseFloat(e.target.value));
 });
 
-// 颜色选择器事件
-colorPicker.addEventListener('input', (e) => {
+// 颜色 + 字号事件
+fontColor.addEventListener('input', (e) => {
   subtitleText.style.color = e.target.value;
+});
+fontSize.addEventListener('input', (e) => {
+  const v = parseInt(e.target.value, 10);
+  subtitleText.style.fontSize = v + 'px';
+  fontSizeValue.textContent = v + 'px';
 });
 
 // 初始化状态

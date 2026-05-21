@@ -62,6 +62,7 @@ function connect() {
       isConnected = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       send({ type: 'connected', message: 'B站已连接' });
+      sendHello();
       startListener();
       // 通知背景脚本连接状态
       chrome.runtime.sendMessage({ type: 'connectionStatus', connected: true });
@@ -85,6 +86,16 @@ function connect() {
 
 function send(data) {
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
+}
+
+// 上报当前视频元数据（让客户端在主进程那边能被准确命名）
+function sendHello() {
+  const info = getVideoInfo();
+  send({
+    type: 'hello',
+    source: getVideoTitle(),
+    bvid: info.bvid || null
+  });
 }
 
 // 获取视频信息
@@ -310,6 +321,7 @@ function detectVideoChange() {
     log('检测到URL变化，重置数据');
     cachedInfo = null;
     subtitleData = null;
+    sendHello();
     return;
   }
 
@@ -321,6 +333,7 @@ function detectVideoChange() {
     log('检测到视频变化，重置数据');
     cachedInfo = null;
     subtitleData = null;
+    sendHello();
   }
 }
 
