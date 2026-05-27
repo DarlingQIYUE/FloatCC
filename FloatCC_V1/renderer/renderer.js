@@ -2,6 +2,7 @@
 console.log('[FloatCC] 渲染进程启动');
 
 let currentSubtitle = '';
+let subtitleAnimTimer = null;  // 字幕淡入动画的待执行 timer，切源时必须清掉防止覆盖
 let isPinned = false;  // 默认不固定，窗口可拖动
 let currentOpacity = 0.9;
 
@@ -34,9 +35,12 @@ let clientsList = [];
 // 更新字幕显示
 function updateSubtitle(data) {
   if (!data || !data.content) {
+    console.log('[RND] updateSubtitle 空内容 → 清空');
+    if (subtitleAnimTimer) { clearTimeout(subtitleAnimTimer); subtitleAnimTimer = null; }
     subtitleText.textContent = '等待字幕数据...';
     subtitleText.classList.add('empty');
     subtitleText.classList.remove('highlight');
+    currentSubtitle = '';
     return;
   }
 
@@ -44,10 +48,13 @@ function updateSubtitle(data) {
 
   // 简单动画效果
   if (data.content !== currentSubtitle) {
+    console.log('[RND] updateSubtitle 写入: ' + data.content.substring(0, 30));
+    if (subtitleAnimTimer) clearTimeout(subtitleAnimTimer);
     subtitleText.style.opacity = '0';
-    setTimeout(() => {
+    subtitleAnimTimer = setTimeout(() => {
       subtitleText.textContent = data.content;
       subtitleText.style.opacity = '1';
+      subtitleAnimTimer = null;
     }, 50);
     currentSubtitle = data.content;
   }
@@ -195,7 +202,12 @@ function adjustOpacity(value) {
 // 事件监听 - 从主进程接收字幕更新
 if (window.electronAPI) {
   window.electronAPI.onSubtitleUpdate((data) => {
-    console.log('[FloatCC] 收到字幕更新:', data);
+    if (data.type !== 'time') {
+      const contentPreview = typeof data.content === 'string'
+        ? (data.content ? data.content.substring(0, 30) : '(空)')
+        : '-';
+      console.log('[RND] 收到 type=' + data.type + ' source=' + (data.source || '-') + ' content=' + contentPreview);
+    }
 
     if (data.type === 'connected') {
       updateConnectionStatus(true);
@@ -210,10 +222,13 @@ if (window.electronAPI) {
     } else if (data.type === 'close' || data.type === 'disconnect') {
       updateConnectionStatus(false);
     } else if (data.type === 'source-changed') {
-      // 切换字幕源时清空字幕等下一帧推送
+      console.log('[RND] source-changed 触发：清空字幕区');
+      // 切换字幕源时清空字幕等下一帧推送，并取消可能在排队的淡入动画 timer
+      if (subtitleAnimTimer) { clearTimeout(subtitleAnimTimer); subtitleAnimTimer = null; }
       currentSubtitle = '';
       subtitleText.textContent = '等待字幕数据...';
       subtitleText.classList.add('empty');
+      subtitleText.style.opacity = '1';
       timeInfo.textContent = '--:-- / --:--';
       sourceInfo.textContent = '未连接';
       sourceInfo.classList.remove('connected');

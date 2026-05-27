@@ -130,26 +130,65 @@ function startWebSocketServer() {
         const c = clients.get(id);
         if (!c) return;
 
+        // 扩展侧日志：直接转发到终端，避免用户去 B 站页面开 F12
+        if (data.type === 'log') {
+          console.log('[EXT id=' + id + '] ' + data.message);
+          return;
+        }
+
         // 提取元数据
         let metaChanged = false;
+        const oldSource = c.source;
         if (data.source && data.source !== c.source) {
           c.source = data.source;
           metaChanged = true;
         }
+        // bvid 切换（非首次设置）= 同 tab 内 SPA 跳转到了另一个视频
+        let videoSwitched = false;
+        const oldBvid = c.bvid;
         if (data.bvid && data.bvid !== c.bvid) {
+          videoSwitched = c.bvid !== null;
           c.bvid = data.bvid;
           metaChanged = true;
         }
         if (typeof data.currentTime === 'number') c.currentTime = data.currentTime;
         if (typeof data.duration === 'number') c.duration = data.duration;
+
+        const isCurrent = id === currentClientId;
+        if (data.type !== 'time') {
+          const contentPreview = typeof data.content === 'string'
+            ? (data.content ? data.content.substring(0, 30) : '(空)')
+            : '-';
+          console.log('[MAIN] 收到 id=' + id + (isCurrent ? '*' : '') + ' type=' + data.type
+            + ' source=' + (data.source || '-')
+            + ' bvid=' + (data.bvid || '-')
+            + ' content=' + contentPreview
+            + (videoSwitched ? ' [videoSwitched]' : '')
+            + (metaChanged ? ' [metaChanged]' : ''));
+          if (oldSource !== c.source) console.log('[MAIN]   client.source: ' + oldSource + ' -> ' + c.source);
+          if (oldBvid !== c.bvid) console.log('[MAIN]   client.bvid: ' + oldBvid + ' -> ' + c.bvid);
+        }
+
         if (metaChanged) broadcastClients();
+
+        // 若切换的是当前源的视频，主动清空渲染进程残留字幕
+        if (videoSwitched && isCurrent
+            && mainWindow && !mainWindow.isDestroyed()) {
+          console.log('[MAIN] 触发 source-changed (videoSwitched)');
+          mainWindow.webContents.send('subtitle-update', { type: 'source-changed' });
+        }
 
         // hello 仅用于上报视频元数据，不转发给渲染进程
         if (data.type === 'hello') return;
 
         // 仅转发当前选中客户端的消息
-        if (id === currentClientId && mainWindow && !mainWindow.isDestroyed()) {
+        if (isCurrent && mainWindow && !mainWindow.isDestroyed()) {
+          if (data.type !== 'time') {
+            console.log('[MAIN] 转发到渲染进程 type=' + data.type);
+          }
           mainWindow.webContents.send('subtitle-update', data);
+        } else if (!isCurrent && data.type !== 'time') {
+          console.log('[MAIN] 丢弃非当前源消息 id=' + id + ' currentClientId=' + currentClientId);
         }
       } catch (e) {
         console.error('[FloatCC] 消息解析失败:', e);
@@ -204,13 +243,17 @@ function selectClient(id) {
 
 // 从在线客户端里挑一个接任，按 id 升序（最早连上的优先）
 function pickNextClient() {
+  const oldId = currentClientId;
   if (clients.size === 0) {
     currentClientId = null;
-    return;
+  } else {
+    const next = Array.from(clients.values()).sort((a, b) => a.id - b.id)[0];
+    currentClientId = next.id;
   }
-  const next = Array.from(clients.values()).sort((a, b) => a.id - b.id)[0];
-  currentClientId = next.id;
+  console.log('[MAIN] pickNextClient: ' + oldId + ' -> ' + currentClientId + ' (在线=' + clients.size + ')');
+  // 无论是否有下一个，都通知渲染进程清空旧源残留
   if (mainWindow && !mainWindow.isDestroyed()) {
+    console.log('[MAIN] 触发 source-changed (pickNextClient)');
     mainWindow.webContents.send('subtitle-update', { type: 'source-changed' });
   }
 }

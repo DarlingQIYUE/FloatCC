@@ -13,18 +13,95 @@ let cachedInfo = null;
 
 function log(message) {
   console.log('[FloatCC扩展]', message);
+  // 同时通过 ws 推到主进程，方便用户在终端统一查看（避免再去 B 站页面开 F12）
+  try {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'log', message: String(message) }));
+    }
+  } catch (e) {}
+}
+
+// 扩展上下文是否还有效（扩展被重载后旧页面上的 content script 会失效）
+function isExtensionAlive() {
+  try {
+    return !!(chrome.runtime && chrome.runtime.id);
+  } catch (e) {
+    return false;
+  }
+}
+
+// 安全调用 chrome.runtime.sendMessage，扩展失效时静默忽略并触发清理
+function safeRuntimeSend(message, callback) {
+  if (!isExtensionAlive()) {
+    cleanupOrphan();
+    return;
+  }
+  try {
+    if (callback) {
+      chrome.runtime.sendMessage(message, callback);
+    } else {
+      chrome.runtime.sendMessage(message);
+    }
+  } catch (e) {
+    if (String(e && e.message).includes('Extension context invalidated')) {
+      cleanupOrphan();
+    } else {
+      log('runtime.sendMessage 异常: ' + e.message);
+    }
+  }
+}
+
+// 扩展重载后，旧页面里这份 content script 变成孤儿，做一次彻底清理
+let orphaned = false;
+function cleanupOrphan() {
+  if (orphaned) return;
+  orphaned = true;
+  log('扩展上下文已失效，停止本页 content script');
+  try { stopListener(); } catch (e) {}
+  try { if (worker) { worker.terminate(); worker = null; } } catch (e) {}
+  try { if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; } } catch (e) {}
+  try { if (ws) { ws.close(); ws = null; } } catch (e) {}
 }
 
 // 发送HTTP请求（通过background脚本代理，解决跨域和cookie问题）
 function httpRequest(url) {
   return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage({ type: 'fetch', url }, (res) => {
-      if (res?.success) {
-        resolve(res.data);
-      } else {
-        reject(new Error(res?.error || '请求失败'));
+    if (!isExtensionAlive()) {
+      cleanupOrphan();
+      reject(new Error('扩展上下文已失效'));
+      return;
+    }
+    try {
+      chrome.runtime.sendMessage({ type: 'fetch', url }, (res) => {
+        // callback 是异步上下文，外层 try/catch 抓不到 — 这里再包一层
+        try {
+          if (!isExtensionAlive()) {
+            cleanupOrphan();
+            reject(new Error('扩展上下文已失效'));
+            return;
+          }
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message || '请求失败'));
+            return;
+          }
+          if (res?.success) {
+            resolve(res.data);
+          } else {
+            reject(new Error(res?.error || '请求失败'));
+          }
+        } catch (e) {
+          if (String(e && e.message).includes('Extension context invalidated')) {
+            cleanupOrphan();
+          }
+          reject(e);
+        }
+      });
+    } catch (e) {
+      if (String(e && e.message).includes('Extension context invalidated')) {
+        cleanupOrphan();
       }
-    });
+      reject(e);
+    }
   });
 }
 
@@ -54,6 +131,7 @@ function createWorker() {
 }
 
 function connect() {
+  if (orphaned) return;
   if (ws && ws.readyState === WebSocket.OPEN) return;
   try {
     ws = new WebSocket(WS_URL);
@@ -65,7 +143,7 @@ function connect() {
       sendHello();
       startListener();
       // 通知背景脚本连接状态
-      chrome.runtime.sendMessage({ type: 'connectionStatus', connected: true });
+      safeRuntimeSend({ type: 'connectionStatus', connected: true });
     };
     ws.onmessage = (event) => {
       try { JSON.parse(event.data); } catch (e) {}
@@ -73,9 +151,11 @@ function connect() {
     ws.onclose = () => {
       log('连接断开，3秒后重连...');
       isConnected = false;
-      reconnectTimer = setTimeout(connect, 3000);
+      if (!orphaned) {
+        reconnectTimer = setTimeout(connect, 3000);
+      }
       stopListener();
-      chrome.runtime.sendMessage({ type: 'connectionStatus', connected: false });
+      safeRuntimeSend({ type: 'connectionStatus', connected: false });
     };
     ws.onerror = () => log('WebSocket错误');
   } catch (e) {
@@ -177,16 +257,28 @@ function fetchSubtitleList() {
   return new Promise(async (resolve) => {
     let info = getVideoInfo();
 
-    if (info.bvid && !info.cid) {
+    // 关键：B 站 SPA 切换时 __INITIAL_STATE__/player 内部状态会滞后于 URL，
+    // getVideoInfo() 可能返回 "新 bvid + 旧 cid"，导致 fetch 拉到旧视频字幕。
+    // 这里强制用 view API 按 bvid 重新校准 cid/aid，覆盖 cache 里可能脏的值。
+    if (info.bvid) {
       try {
+        log('[CC] fetchSubtitleList: 用 view API 校准 cid/aid，bvid=' + info.bvid);
         const viewData = await httpRequest(`https://api.bilibili.com/x/web-interface/view?bvid=${info.bvid}`);
         if (viewData.code === 0 && viewData.data) {
+          const oldCid = info.cid;
+          const oldAid = info.aid;
           info.cid = viewData.data.cid;
           info.aid = viewData.data.aid;
-          log('通过view API获取: cid=' + info.cid + ', aid=' + info.aid);
+          if (cachedInfo) {
+            cachedInfo.cid = info.cid;
+            cachedInfo.aid = info.aid;
+          }
+          log('[CC] view API 返回 cid=' + info.cid + ' aid=' + info.aid
+            + (oldCid && oldCid !== info.cid ? ' (cid纠正: ' + oldCid + ' -> ' + info.cid + ')' : '')
+            + (oldAid && oldAid !== info.aid ? ' (aid纠正: ' + oldAid + ' -> ' + info.aid + ')' : ''));
         }
       } catch (e) {
-        log('view API请求失败: ' + e.message);
+        log('[CC] view API 失败: ' + e.message);
       }
     }
 
@@ -207,40 +299,32 @@ function fetchSubtitleList() {
       log('字幕API响应: code=' + data.code);
 
       // 检查所有可能的字幕字段
-      let subtitles = null;
+      let subtitles = [];
 
       if (data.code === 0 && data.data) {
-        // 尝试多种字幕字段
         subtitles = data.data?.subtitle?.subtitles ||          // 标准字段
                     data.data?.subtitles ||                     // 备用字段
                     data.data?.closed_caption?.subtitles ||    // cc字段
                     [];
-
-        if (subtitles.length > 0) {
-          log('字幕数量: ' + subtitles.length);
-          resolve(subtitles);
-          return;
-        }
-
-        // 如果没有字幕，尝试其他API
-        log('标准API无字幕，尝试其他接口...');
-
-        // 尝试获取视频所有字幕列表
-        if (info.cid) {
-          const subListUrl = `https://api.bilibili.com/x/player/v2?cid=${info.cid}&aid=${info.aid}&fnval=16`;
-          try {
-            const data2 = await httpRequest(subListUrl);
-            if (data2.data?.subtitle?.subtitles) {
-              log('字幕列表2: ' + data2.data.subtitle.subtitles.length);
-              resolve(data2.data.subtitle.subtitles);
-              return;
-            }
-          } catch (e) {}
-        }
       }
 
-      log('无字幕或API错误: code=' + data.code + ', message=' + data.message);
-      resolve([]);
+      // 归属校验：B 站对没有字幕的视频，接口有时会串台返回「其他视频」的字幕，
+      // 内容毫无关联。AI 字幕的 subtitle_url 形如 .../ai_subtitle/prod/{aid}{cid}xxx，
+      // 用当前视频的 aid+cid 校验，对不上的直接丢弃。人工字幕 URL 格式不同，放行不误杀。
+      const tag = '' + (info.aid || '') + (info.cid || '');
+      const valid = subtitles.filter(s => {
+        const u = s.subtitle_url || '';
+        if (!u.includes('ai_subtitle')) return true;      // 非 AI 字幕放行
+        if (!info.aid || !info.cid) return true;          // 信息不全放行
+        const belongs = u.includes(tag);
+        if (!belongs) {
+          log('[CC] 丢弃串台字幕 lan=' + s.lan + ' 期望含 ' + tag + ' 实际 url=' + u.slice(0, 90));
+        }
+        return belongs;
+      });
+
+      log('[CC] 字幕数 原始=' + subtitles.length + ' 校验后=' + valid.length);
+      resolve(valid);
     } catch (e) {
       log('请求字幕列表失败: ' + e.message);
       resolve([]);
@@ -313,14 +397,25 @@ function getVideoTitle() {
 
 // 记录上一次URL，用于检测SPA页面变化
 let lastUrl = location.href;
+// 视频切换冷却：SPA 跳转后 B 站全局状态需要时间稳定，期间不 fetch 字幕避免拉到旧 cid
+let videoSwitchedAt = 0;
+const SWITCH_COOLDOWN_MS = 1500;
 
 function detectVideoChange() {
   // 检测URL变化
   if (location.href !== lastUrl) {
+    const oldUrl = lastUrl;
     lastUrl = location.href;
-    log('检测到URL变化，重置数据');
+    log('[CC] URL变化 ' + oldUrl + ' -> ' + lastUrl);
+    log('[CC] 重置: cachedInfo/subtitleData/lastSubtitle 清空，进入冷却期');
     cachedInfo = null;
     subtitleData = null;
+    lastSubtitle = '';
+    videoSwitchedAt = Date.now();
+    // 主动告知主进程"当前没有字幕"，避免渲染进程残留旧视频字幕
+    const title = getVideoTitle();
+    log('[CC] 发送空 subtitle 强制清屏, source=' + title);
+    send({ type: 'subtitle', content: '', source: title });
     sendHello();
     return;
   }
@@ -330,9 +425,14 @@ function detectVideoChange() {
   const pageBvid = urlMatch ? urlMatch[1] : null;
 
   if (pageBvid && cachedInfo && pageBvid !== cachedInfo.bvid) {
-    log('检测到视频变化，重置数据');
+    log('[CC] bvid变化 ' + cachedInfo.bvid + ' -> ' + pageBvid);
     cachedInfo = null;
     subtitleData = null;
+    lastSubtitle = '';
+    videoSwitchedAt = Date.now();
+    const title = getVideoTitle();
+    log('[CC] 发送空 subtitle 强制清屏, source=' + title);
+    send({ type: 'subtitle', content: '', source: title });
     sendHello();
   }
 }
@@ -350,11 +450,27 @@ async function checkAndSend() {
 
   detectVideoChange();
 
+  // 视频切换后的冷却期：B 站 __INITIAL_STATE__/player 内部需要时间更新，
+  // 此时拉字幕会拿到旧视频的 cid，导致显示错乱
+  const elapsed = Date.now() - videoSwitchedAt;
+  if (elapsed < SWITCH_COOLDOWN_MS) {
+    log('[CC] 冷却期(' + elapsed + 'ms / ' + SWITCH_COOLDOWN_MS + 'ms)，跳过字幕处理');
+    send({ type: 'time', currentTime, duration });
+    return;
+  }
+
   try {
     if (!subtitleData) {
-      log('开始获取字幕列表, videoInfo: ' + JSON.stringify(info));
+      log('[CC] subtitleData为空，开始 fetch。info=' + JSON.stringify(info) + ' currentTime=' + currentTime);
+      // race token：fetch 跨多个 await，期间 URL 又变就丢弃
+      const tokenUrl = lastUrl;
       const list = await fetchSubtitleList();
-      log('字幕列表: ' + JSON.stringify(list));
+      if (lastUrl !== tokenUrl) {
+        log('[CC] fetchSubtitleList 期间 URL 又变了，丢弃。tokenUrl=' + tokenUrl + ' now=' + lastUrl);
+        send({ type: 'time', currentTime, duration });
+        return;
+      }
+      log('[CC] fetchSubtitleList 完成, len=' + (list?.length || 0));
 
       if (list && list.length > 0) {
         // 优先选择中文简体
@@ -365,12 +481,18 @@ async function checkAndSend() {
           s.lan_doc === '中文'
         );
         const subtitle = zhCn || list[0];
-        log('选择字幕: ' + JSON.stringify(subtitle));
-        subtitleData = await fetchSubtitleContent(subtitle.subtitle_url);
+        log('[CC] 选择字幕 lan=' + subtitle.lan + ' subtitle_url=' + subtitle.subtitle_url);
+        const fetched = await fetchSubtitleContent(subtitle.subtitle_url);
+        if (lastUrl !== tokenUrl) {
+          log('[CC] fetchSubtitleContent 期间 URL 又变了，丢弃。tokenUrl=' + tokenUrl + ' now=' + lastUrl);
+          send({ type: 'time', currentTime, duration });
+          return;
+        }
+        subtitleData = fetched;
         subtitleData.source = getVideoTitle();
-        log('字幕数据加载完成, body长度: ' + (subtitleData.body?.length || 0));
+        log('[CC] subtitleData写入完成 body长度=' + (subtitleData.body?.length || 0) + ' source=' + subtitleData.source);
       } else {
-        log('没有找到字幕');
+        log('[CC] fetch返回空字幕列表');
       }
     }
 
@@ -378,9 +500,7 @@ async function checkAndSend() {
       const content = getSubtitleByTime(currentTime, subtitleData);
       if (content !== lastSubtitle) {
         lastSubtitle = content || '';
-        if (lastSubtitle) {
-          log('发送字幕: ' + lastSubtitle.substring(0, 20));
-        }
+        log('[CC] 推送subtitle currentTime=' + currentTime + ' content=' + (lastSubtitle || '(空)').substring(0, 30) + ' source=' + (subtitleData.source || getVideoTitle()));
         send({
           type: 'subtitle',
           content: lastSubtitle,
